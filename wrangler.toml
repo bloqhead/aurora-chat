@@ -1,0 +1,24 @@
+name = "aurora-chat"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# KV namespace for user accounts
+[[kv_namespaces]]
+binding = "USERS"
+id = "REPLACE_WITH_KV_ID"          # filled in automatically by `wrangler kv:namespace create`
+preview_id = "REPLACE_WITH_KV_PREVIEW_ID"
+
+# Durable Object for the chat room
+[[durable_objects.bindings]]
+name = "CHATROOM"
+class_name = "ChatRoom"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ChatRoom"]
+
+# Environment variables — set JWT_SECRET via `wrangler secret put JWT_SECRET`
+# Do NOT put the actual secret in this file
+[vars]
+# JWT_SECRET is set as a secret, not here
