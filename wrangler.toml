@@ -6,8 +6,8 @@ compatibility_flags = ["nodejs_compat"]
 # KV namespace for user accounts
 [[kv_namespaces]]
 binding = "USERS"
-id = "REPLACE_WITH_KV_ID"          # filled in automatically by `wrangler kv:namespace create`
-preview_id = "REPLACE_WITH_KV_PREVIEW_ID"
+id = "c56e8fc81bf44e54a515838453ae30f0"
+preview_id = "73272500f3e94737b472dc80490e2225"
 
 # Durable Object for the chat room
 [[durable_objects.bindings]]
