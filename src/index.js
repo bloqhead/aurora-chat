@@ -116,7 +116,7 @@ export default {
         body: JSON.stringify({ secret: env.TURNSTILE_SECRET, response: turnstileToken }),
       });
       const tsData = await tsRes.json();
-      if (!tsData.success) return json({ error: 'Captcha verification failed. Please try again.' }, 400);
+      if (!tsData.success) return json({ error: `Captcha failed: ${JSON.stringify(tsData)}` }, 400);
 
       if (username.length < 2 || username.length > 24) return json({ error: 'Username must be 2–24 characters' }, 400);
       if (!/^[a-zA-Z0-9_]+$/.test(username)) return json({ error: 'Username: letters, numbers, underscores only' }, 400);
