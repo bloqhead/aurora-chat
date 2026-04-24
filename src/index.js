@@ -96,13 +96,14 @@ async function checkRateLimit(kv, ip) {
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    // Normalize path — strip trailing slash
+    const path = url.pathname.replace(/\/$/, '') || '/';
 
     if (request.method === 'OPTIONS') {
       return new Response(null, { headers: CORS });
     }
 
-    // POST /auth/register
-    if (url.pathname === '/auth/register' && request.method === 'POST') {
+    if (path === '/auth/register' && request.method === 'POST') {
       const { username, password } = await request.json();
       if (!username || !password) return json({ error: 'Username and password required' }, 400);
       if (username.length < 2 || username.length > 24) return json({ error: 'Username must be 2–24 characters' }, 400);
@@ -121,8 +122,7 @@ export default {
       return json({ token, username });
     }
 
-    // POST /auth/login
-    if (url.pathname === '/auth/login' && request.method === 'POST') {
+    if (path === '/auth/login' && request.method === 'POST') {
       const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
       const allowed = await checkRateLimit(env.USERS, ip);
       if (!allowed) return json({ error: 'Too many attempts. Try again in 15 minutes.' }, 429);
@@ -140,8 +140,7 @@ export default {
       return json({ token, username: user.username });
     }
 
-    // GET /ws — WebSocket upgrade → route to Durable Object
-    if (url.pathname === '/ws') {
+    if (path === '/ws') {
       const token = url.searchParams.get('token');
       if (!token) return json({ error: 'Token required' }, 401);
       const payload = await verifyJWT(token, env.JWT_SECRET);
