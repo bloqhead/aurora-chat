@@ -16,7 +16,7 @@ class_name = "ChatRoom"
 
 [[migrations]]
 tag = "v1"
-new_classes = ["ChatRoom"]
+new_sqlite_classes = ["ChatRoom"]
 
 # Environment variables — set JWT_SECRET via `wrangler secret put JWT_SECRET`
 # Do NOT put the actual secret in this file
