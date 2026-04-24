@@ -103,9 +103,21 @@ export default {
       return new Response(null, { headers: CORS });
     }
 
+    // POST /auth/register
     if (path === '/auth/register' && request.method === 'POST') {
-      const { username, password } = await request.json();
+      const { username, password, turnstileToken } = await request.json();
       if (!username || !password) return json({ error: 'Username and password required' }, 400);
+
+      // Verify Turnstile token
+      if (!turnstileToken) return json({ error: 'Please complete the captcha' }, 400);
+      const tsRes = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secret: env.TURNSTILE_SECRET, response: turnstileToken }),
+      });
+      const tsData = await tsRes.json();
+      if (!tsData.success) return json({ error: 'Captcha verification failed. Please try again.' }, 400);
+
       if (username.length < 2 || username.length > 24) return json({ error: 'Username must be 2–24 characters' }, 400);
       if (!/^[a-zA-Z0-9_]+$/.test(username)) return json({ error: 'Username: letters, numbers, underscores only' }, 400);
       if (password.length < 6) return json({ error: 'Password must be at least 6 characters' }, 400);
