@@ -152,32 +152,6 @@ export default {
       return json({ token, username: user.username });
     }
 
-    // ── IGDB debug ───────────────────────────────────────────────────────────
-    if (path === '/igdb-debug' && request.method === 'GET') {
-      const genre = url.searchParams.get('genre') || 'puzzle';
-      let token = await env.USERS.get('igdb_token');
-      if (!token) {
-        const tokenRes = await fetch(
-          `https://id.twitch.tv/oauth2/token?client_id=${env.IGDB_CLIENT_ID}&client_secret=${env.IGDB_CLIENT_SECRET}&grant_type=client_credentials`,
-          { method: 'POST' }
-        );
-        const tokenData = await tokenRes.json();
-        token = tokenData.access_token;
-        if (token) await env.USERS.put('igdb_token', token, { expirationTtl: 4700000 });
-      }
-      // Raw query — no filters, just get anything with this genre
-      const res = await fetch('https://api.igdb.com/v4/games', {
-        method: 'POST',
-        headers: { 'Client-ID': env.IGDB_CLIENT_ID, 'Authorization': `Bearer ${token}`, 'Content-Type': 'text/plain' },
-        body: `fields name, rating, rating_count, genres.name, themes.name, websites.category; where genres = (9) & rating > 50 & rating_count > 5 & websites.category = 13; limit 5;`
-      });
-      const raw = await res.text();
-      return new Response(JSON.stringify({ status: res.status, token: token ? 'ok' : 'missing', raw }), {
-        headers: { 'Content-Type': 'application/json', ...CORS }
-      });
-    }
-
-
     if (path === '/igdb' && request.method === 'GET') {
       const genre = url.searchParams.get('genre');
       if (!genre) return json({ error: 'genre required' }, 400);
@@ -229,7 +203,7 @@ export default {
 
       // Query IGDB — top rated games with Steam links
       const eightYearsAgo = Math.floor(Date.now() / 1000) - (8 * 365 * 24 * 3600);
-      const offset = Math.floor(Math.random() * 5) * 10;
+      const offset = Math.floor(Math.random() * 8) * 10;
       const igdbRes = await fetch('https://api.igdb.com/v4/games', {
         method: 'POST',
         headers: {
@@ -238,14 +212,13 @@ export default {
           'Content-Type': 'text/plain',
         },
         body: `
-          fields name, summary, rating, rating_count, cover.url, websites.url, websites.category, genres.name, themes.name, first_release_date;
+          fields name, summary, rating, rating_count, cover.url, websites.url, websites.category, genres.name, themes.name;
           where ${filterField} = (${genreInfo.id})
-            & rating > 65
-            & rating_count > 20
-            & websites.category = 13
-            & version_parent = null
-            & category = 0;
-          sort rating desc;
+            & rating >= 65
+            & rating_count >= 10
+            & category = 0
+            & version_parent = null;
+          sort rating_count desc;
           limit 50;
           offset ${offset};
         `
@@ -263,24 +236,37 @@ export default {
       // Extract Steam URL (category 13 = Steam)
       const results = games
         .map(g => {
-          const steamUrl = g.websites?.find(w => w.category === 13)?.url || null;
+          const steamSite = g.websites?.find(w => w.category === 13 || (w.url && w.url.includes('store.steampowered.com')));
+          const steamUrl = steamSite?.url || null;
           const appid = steamUrl ? steamUrl.match(/app\/(\d+)/)?.[1] : null;
           return {
             name: g.name,
-            summary: g.summary ? g.summary.slice(0, 180) + (g.summary.length > 180 ? '…' : '') : null,
+            summary: g.summary ? g.summary.slice(0, 200) + (g.summary.length > 200 ? '…' : '') : null,
             score: Math.round(g.rating),
             rating_count: g.rating_count,
             cover: g.cover?.url ? 'https:' + g.cover.url.replace('t_thumb', 't_cover_big') : null,
             steamUrl,
             appid,
-            genres: g.genres?.map(ge => ge.name).join(', ') || null,
+            genres: (g.genres?.map(ge => ge.name) || []).concat(g.themes?.map(t => t.name) || []).slice(0,3).join(', ') || null,
           };
         })
-        .filter(g => g.steamUrl); // only include games with Steam links
+        .filter(g => g.steamUrl);
 
-      if (!results.length) return json({ error: 'No Steam games found for this genre' }, 404);
+      // Fall back to all games if none have Steam links
+      const finalResults = results.length > 0 ? results : games.map(g => ({
+        name: g.name,
+        summary: g.summary ? g.summary.slice(0, 200) + (g.summary.length > 200 ? '…' : '') : null,
+        score: Math.round(g.rating || 0),
+        rating_count: g.rating_count || 0,
+        cover: g.cover?.url ? 'https:' + g.cover.url.replace('t_thumb', 't_cover_big') : null,
+        steamUrl: `https://www.igdb.com/games/${g.name.toLowerCase().replace(/[^a-z0-9]/g,'-')}`,
+        appid: null,
+        genres: (g.genres?.map(ge => ge.name) || []).slice(0,3).join(', ') || null,
+      }));
 
-      const result = JSON.stringify(results);
+      if (!finalResults.length) return json({ error: 'No games found for this genre' }, 404);
+
+      const result = JSON.stringify(finalResults);
       await env.USERS.put(cacheKey, result, { expirationTtl: 21600 });
       return new Response(result, {
         headers: { 'Content-Type': 'application/json', ...CORS }
