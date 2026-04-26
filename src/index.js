@@ -201,9 +201,7 @@ export default {
       const genreInfo = GENRE_MAP[genre.toLowerCase()] || { type: 'genre', id: 12 };
       const filterField = genreInfo.type === 'theme' ? 'themes' : 'genres';
 
-      // Query IGDB — top rated games with Steam links
-      const eightYearsAgo = Math.floor(Date.now() / 1000) - (8 * 365 * 24 * 3600);
-      const offset = Math.floor(Math.random() * 8) * 10;
+      const offset = Math.floor(Math.random() * 5) * 10;
       const igdbRes = await fetch('https://api.igdb.com/v4/games', {
         method: 'POST',
         headers: {
@@ -211,27 +209,18 @@ export default {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'text/plain',
         },
-        body: `
-          fields name, summary, rating, rating_count, cover.url, websites.url, websites.category, genres.name, themes.name;
-          where ${filterField} = (${genreInfo.id})
-            & rating >= 65
-            & rating_count >= 10
-            & category = 0
-            & version_parent = null;
-          sort rating_count desc;
-          limit 50;
-          offset ${offset};
-        `
+        body: `fields name, summary, rating, rating_count, cover.url, websites.url, websites.category, genres.name, themes.name; where ${filterField} = (${genreInfo.id}) & rating >= 60 & rating_count >= 10; sort rating_count desc; limit 50; offset ${offset};`
       });
 
+      const rawText = await igdbRes.text();
       if (!igdbRes.ok) {
-        // Token may have expired, clear it and retry once
         await env.USERS.delete('igdb_token');
-        return json({ error: 'IGDB request failed, try again' }, 502);
+        return json({ error: `IGDB error ${igdbRes.status}: ${rawText.slice(0,200)}` }, 502);
       }
 
-      const games = await igdbRes.json();
-      if (!games.length) return json({ error: 'No games found' }, 404);
+      let games;
+      try { games = JSON.parse(rawText); } catch(e) { return json({ error: 'IGDB parse error: ' + rawText.slice(0,200) }, 502); }
+      if (!Array.isArray(games) || !games.length) return json({ error: 'No games found', raw: rawText.slice(0,200) }, 404);
 
       // Extract Steam URL (category 13 = Steam)
       const results = games
