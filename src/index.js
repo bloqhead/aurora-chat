@@ -208,6 +208,7 @@ export default {
           'Client-ID': env.IGDB_CLIENT_ID,
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'text/plain',
+          'Accept': 'application/json',
         },
         body: `fields name, summary, rating, rating_count, cover.url, websites.url, websites.category, genres.name, themes.name; where ${filterField} = (${genreInfo.id}) & rating >= 60 & rating_count >= 10; sort rating_count desc; limit 50; offset ${offset};`
       });
@@ -230,7 +231,7 @@ export default {
           const appid = steamUrl ? steamUrl.match(/app\/(\d+)/)?.[1] : null;
           return {
             name: g.name,
-            summary: g.summary ? g.summary.slice(0, 200) + (g.summary.length > 200 ? '…' : '') : null,
+            summary: g.summary ? g.summary.replace(/â€™/g,"'").replace(/â€œ/g,'"').replace(/â€/g,'"').replace(/â€¦/g,'…').slice(0, 200) + (g.summary.length > 200 ? '…' : '') : null,
             score: Math.round(g.rating),
             rating_count: g.rating_count,
             cover: g.cover?.url ? 'https:' + g.cover.url.replace('t_thumb', 't_cover_big') : null,
