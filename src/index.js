@@ -152,7 +152,32 @@ export default {
       return json({ token, username: user.username });
     }
 
-    // ── IGDB game recommendations ────────────────────────────────────────────
+    // ── IGDB debug ───────────────────────────────────────────────────────────
+    if (path === '/igdb-debug' && request.method === 'GET') {
+      const genre = url.searchParams.get('genre') || 'puzzle';
+      let token = await env.USERS.get('igdb_token');
+      if (!token) {
+        const tokenRes = await fetch(
+          `https://id.twitch.tv/oauth2/token?client_id=${env.IGDB_CLIENT_ID}&client_secret=${env.IGDB_CLIENT_SECRET}&grant_type=client_credentials`,
+          { method: 'POST' }
+        );
+        const tokenData = await tokenRes.json();
+        token = tokenData.access_token;
+        if (token) await env.USERS.put('igdb_token', token, { expirationTtl: 4700000 });
+      }
+      // Raw query — no filters, just get anything with this genre
+      const res = await fetch('https://api.igdb.com/v4/games', {
+        method: 'POST',
+        headers: { 'Client-ID': env.IGDB_CLIENT_ID, 'Authorization': `Bearer ${token}`, 'Content-Type': 'text/plain' },
+        body: `fields name, rating, rating_count, genres.name, themes.name, websites.category; where genres = (9) & rating > 50 & rating_count > 5 & websites.category = 13; limit 5;`
+      });
+      const raw = await res.text();
+      return new Response(JSON.stringify({ status: res.status, token: token ? 'ok' : 'missing', raw }), {
+        headers: { 'Content-Type': 'application/json', ...CORS }
+      });
+    }
+
+
     if (path === '/igdb' && request.method === 'GET') {
       const genre = url.searchParams.get('genre');
       if (!genre) return json({ error: 'genre required' }, 400);
