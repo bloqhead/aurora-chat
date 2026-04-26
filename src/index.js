@@ -152,7 +152,121 @@ export default {
       return json({ token, username: user.username });
     }
 
-    if (path === '/steam' && request.method === 'GET') {
+    // ── IGDB game recommendations ────────────────────────────────────────────
+    if (path === '/igdb' && request.method === 'GET') {
+      const genre = url.searchParams.get('genre');
+      if (!genre) return json({ error: 'genre required' }, 400);
+
+      if (!env.IGDB_CLIENT_ID || !env.IGDB_CLIENT_SECRET) {
+        return json({ error: 'IGDB not configured' }, 503);
+      }
+
+      // Cache results for 6 hours
+      const cacheKey = `igdb_genre:${genre.toLowerCase()}`;
+      const cached = await env.USERS.get(cacheKey);
+      if (cached) {
+        return new Response(cached, {
+          headers: { 'Content-Type': 'application/json', ...CORS }
+        });
+      }
+
+      // Get/refresh OAuth token (cached in KV)
+      let token = await env.USERS.get('igdb_token');
+      if (!token) {
+        const tokenRes = await fetch(
+          `https://id.twitch.tv/oauth2/token?client_id=${env.IGDB_CLIENT_ID}&client_secret=${env.IGDB_CLIENT_SECRET}&grant_type=client_credentials`,
+          { method: 'POST' }
+        );
+        if (!tokenRes.ok) return json({ error: 'IGDB auth failed' }, 502);
+        const tokenData = await tokenRes.json();
+        token = tokenData.access_token;
+        // Cache token for slightly less than its expiry (~55 days)
+        await env.USERS.put('igdb_token', token, { expirationTtl: 4700000 });
+      }
+
+      // IGDB genre name → ID map
+      const GENRE_IDS = {
+        'relaxing': 13,    // Simulator (closest to cozy)
+        'rpg': 12,
+        'indie': 32,
+        'puzzle': 9,
+        'horror': 19,
+        'strategy': 15,
+        'simulation': 13,
+        'platformer': 8,
+        'roguelike': 24,   // Hack and slash (closest)
+        'open world': 12,  // RPG (open world isn't a genre in IGDB)
+        'adventure': 31,
+        'shooter': 5,
+        'fighting': 4,
+        'sport': 14,
+        'racing': 10,
+        'arcade': 33,
+      };
+
+      const genreId = GENRE_IDS[genre.toLowerCase()] || 12;
+
+      // Query IGDB — top rated games in genre with Steam website, released in last 8 years
+      const eightYearsAgo = Math.floor(Date.now() / 1000) - (8 * 365 * 24 * 3600);
+      const igdbRes = await fetch('https://api.igdb.com/v4/games', {
+        method: 'POST',
+        headers: {
+          'Client-ID': env.IGDB_CLIENT_ID,
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'text/plain',
+        },
+        body: `
+          fields name, summary, rating, rating_count, cover.url, websites.url, websites.category, genres.name, first_release_date;
+          where genres = (${genreId})
+            & rating > 70
+            & rating_count > 50
+            & first_release_date > ${eightYearsAgo}
+            & websites.category = 13
+            & version_parent = null
+            & category = 0;
+          sort rating desc;
+          limit 50;
+          offset ${Math.floor(Math.random() * 5) * 10};
+        `
+      });
+
+      if (!igdbRes.ok) {
+        // Token may have expired, clear it and retry once
+        await env.USERS.delete('igdb_token');
+        return json({ error: 'IGDB request failed, try again' }, 502);
+      }
+
+      const games = await igdbRes.json();
+      if (!games.length) return json({ error: 'No games found' }, 404);
+
+      // Extract Steam URL (category 13 = Steam)
+      const results = games
+        .map(g => {
+          const steamUrl = g.websites?.find(w => w.category === 13)?.url || null;
+          const appid = steamUrl ? steamUrl.match(/app\/(\d+)/)?.[1] : null;
+          return {
+            name: g.name,
+            summary: g.summary ? g.summary.slice(0, 180) + (g.summary.length > 180 ? '…' : '') : null,
+            score: Math.round(g.rating),
+            rating_count: g.rating_count,
+            cover: g.cover?.url ? 'https:' + g.cover.url.replace('t_thumb', 't_cover_big') : null,
+            steamUrl,
+            appid,
+            genres: g.genres?.map(ge => ge.name).join(', ') || null,
+          };
+        })
+        .filter(g => g.steamUrl); // only include games with Steam links
+
+      if (!results.length) return json({ error: 'No Steam games found for this genre' }, 404);
+
+      const result = JSON.stringify(results);
+      await env.USERS.put(cacheKey, result, { expirationTtl: 21600 });
+      return new Response(result, {
+        headers: { 'Content-Type': 'application/json', ...CORS }
+      });
+    }
+
+
       let tag = url.searchParams.get('tag');
       if (!tag) return json({ error: 'tag required' }, 400);
       // Alias tags that don't exist in SteamSpy
