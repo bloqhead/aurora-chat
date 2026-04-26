@@ -156,7 +156,7 @@ export default {
       const tag = url.searchParams.get('tag');
       if (!tag) return json({ error: 'tag required' }, 400);
 
-      // Check KV cache first (cache for 12 hours)
+      // Check KV cache first (cache for 6 hours)
       const cacheKey = `steam_tag:${tag.toLowerCase()}`;
       const cached = await env.USERS.get(cacheKey);
       if (cached) {
@@ -165,16 +165,30 @@ export default {
         });
       }
 
-      // Fetch from SteamSpy
-      const spRes = await fetch(`https://steamspy.com/api.php?request=tag&tag=${encodeURIComponent(tag)}`);
-      if (!spRes.ok) return json({ error: 'SteamSpy error' }, 502);
-      const spData = await spRes.json();
+      // Fetch from SteamSpy with retry
+      let spData = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const spRes = await fetch(
+            `https://steamspy.com/api.php?request=tag&tag=${encodeURIComponent(tag)}`,
+            { signal: AbortSignal.timeout(8000) }
+          );
+          if (!spRes.ok) continue;
+          const text = await spRes.text();
+          if (!text || text === 'null') continue;
+          spData = JSON.parse(text);
+          if (spData && Object.keys(spData).length > 0) break;
+        } catch { /* retry */ }
+      }
 
-      // Pick up to 20 games, filter to those with meaningful ratings
+      if (!spData || Object.keys(spData).length === 0) {
+        return json({ error: 'SteamSpy unavailable, try again' }, 502);
+      }
+
       const games = Object.values(spData)
         .filter(g => g.positive + g.negative > 100)
         .sort((a, b) => (b.positive / (b.positive + b.negative)) - (a.positive / (a.positive + a.negative)))
-        .slice(0, 20)
+        .slice(0, 30)
         .map(g => ({
           appid: g.appid,
           name: g.name,
@@ -184,9 +198,10 @@ export default {
           owners: g.owners,
         }));
 
+      if (!games.length) return json({ error: 'No games found for this tag' }, 404);
+
       const result = JSON.stringify(games);
-      // Cache for 12 hours
-      await env.USERS.put(cacheKey, result, { expirationTtl: 43200 });
+      await env.USERS.put(cacheKey, result, { expirationTtl: 21600 }); // 6 hours
 
       return new Response(result, {
         headers: { 'Content-Type': 'application/json', ...CORS }
