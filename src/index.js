@@ -153,8 +153,11 @@ export default {
     }
 
     if (path === '/steam' && request.method === 'GET') {
-      const tag = url.searchParams.get('tag');
+      let tag = url.searchParams.get('tag');
       if (!tag) return json({ error: 'tag required' }, 400);
+      // Alias tags that don't exist in SteamSpy
+      const tagAliases = { 'Cozy': 'Relaxing', 'cozy': 'Relaxing' };
+      tag = tagAliases[tag] || tag;
 
       // Check KV cache first (cache for 6 hours)
       const cacheKey = `steam_tag:${tag.toLowerCase()}`;
