@@ -186,19 +186,19 @@ export default {
       // IGDB genre IDs (verified): https://api.igdb.com/v4/genres
       // IGDB theme IDs: https://api.igdb.com/v4/themes
       const GENRE_MAP = {
-        'relaxing':   { type: 'theme',  id: 21,   label: 'Sandbox' },  // use Sandbox theme + filter for peaceful games
-        'rpg':        { type: 'genre',  id: 12  },
-        'indie':      { type: 'genre',  id: 32  },
-        'puzzle':     { type: 'genre',  id: 9   },
-        'horror':     { type: 'theme',  id: 19  },
-        'strategy':   { type: 'genre',  id: 15  },
-        'simulation': { type: 'genre',  id: 13  },
-        'platformer': { type: 'genre',  id: 8   },
-        'roguelike':  { type: 'theme',  id: 23  },  // Survival theme — closest
-        'open world': { type: 'theme',  id: 33  },  // Open world theme
+        'relaxing':   { type: 'genre',  id: 13,  extra: '& themes != (19,21,23,31)' }, // Simulator, exclude horror/survival/stealth/sandbox-dark
+        'rpg':        { type: 'genre',  id: 12,  extra: '' },
+        'indie':      { type: 'genre',  id: 32,  extra: '' },
+        'puzzle':     { type: 'genre',  id: 9,   extra: '' },
+        'horror':     { type: 'theme',  id: 19,  extra: '' },
+        'strategy':   { type: 'genre',  id: 15,  extra: '' },
+        'simulation': { type: 'genre',  id: 13,  extra: '' },
+        'platformer': { type: 'genre',  id: 8,   extra: '' },
+        'roguelike':  { type: 'genre',  id: 24,  extra: '' }, // Hack & Slash/Beat em up — closest available
+        'open world': { type: 'theme',  id: 33,  extra: '' },
       };
 
-      const genreInfo = GENRE_MAP[genre.toLowerCase()] || { type: 'genre', id: 12 };
+      const genreInfo = GENRE_MAP[genre.toLowerCase()] || { type: 'genre', id: 12, extra: '' };
       const filterField = genreInfo.type === 'theme' ? 'themes' : 'genres';
 
       const offset = Math.floor(Math.random() * 5) * 10;
@@ -210,7 +210,7 @@ export default {
           'Content-Type': 'text/plain',
           'Accept': 'application/json',
         },
-        body: `fields name, summary, rating, rating_count, cover.url, websites.url, websites.category, genres.name, themes.name; where ${filterField} = (${genreInfo.id}) & rating >= 60 & rating_count >= 10; sort rating_count desc; limit 50; offset ${offset};`
+        body: `fields name, summary, rating, rating_count, cover.url, websites.url, websites.category, genres.name, themes.name; where ${filterField} = (${genreInfo.id}) & rating >= 60 & rating_count >= 10 ${genreInfo.extra}; sort rating_count desc; limit 50; offset ${offset};`
       });
 
       const rawText = await igdbRes.text();
