@@ -152,6 +152,47 @@ export default {
       return json({ token, username: user.username });
     }
 
+    if (path === '/steam' && request.method === 'GET') {
+      const tag = url.searchParams.get('tag');
+      if (!tag) return json({ error: 'tag required' }, 400);
+
+      // Check KV cache first (cache for 12 hours)
+      const cacheKey = `steam_tag:${tag.toLowerCase()}`;
+      const cached = await env.USERS.get(cacheKey);
+      if (cached) {
+        return new Response(cached, {
+          headers: { 'Content-Type': 'application/json', ...CORS }
+        });
+      }
+
+      // Fetch from SteamSpy
+      const spRes = await fetch(`https://steamspy.com/api.php?request=tag&tag=${encodeURIComponent(tag)}`);
+      if (!spRes.ok) return json({ error: 'SteamSpy error' }, 502);
+      const spData = await spRes.json();
+
+      // Pick up to 20 games, filter to those with meaningful ratings
+      const games = Object.values(spData)
+        .filter(g => g.positive + g.negative > 100)
+        .sort((a, b) => (b.positive / (b.positive + b.negative)) - (a.positive / (a.positive + a.negative)))
+        .slice(0, 20)
+        .map(g => ({
+          appid: g.appid,
+          name: g.name,
+          positive: g.positive,
+          negative: g.negative,
+          score: Math.round(g.positive / (g.positive + g.negative) * 100),
+          owners: g.owners,
+        }));
+
+      const result = JSON.stringify(games);
+      // Cache for 12 hours
+      await env.USERS.put(cacheKey, result, { expirationTtl: 43200 });
+
+      return new Response(result, {
+        headers: { 'Content-Type': 'application/json', ...CORS }
+      });
+    }
+
     if (path === '/ws') {
       const token = url.searchParams.get('token');
       if (!token) return json({ error: 'Token required' }, 401);
