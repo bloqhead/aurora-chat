@@ -196,12 +196,19 @@ export default {
         'strategy':   { type: 'genre',  id: 15,  extra: '' },
         'simulation': { type: 'genre',  id: 13,  extra: '' },
         'platformer': { type: 'genre',  id: 8,   extra: '' },
-        'roguelike':  { type: 'genre',  id: 24,  extra: '' }, // Hack & Slash/Beat em up — closest available
+        'roguelike':  { type: 'keyword', id: 'roguelike', extra: '' },
         'open world': { type: 'theme',  id: 33,  extra: '' },
       };
 
       const genreInfo = GENRE_MAP[genre.toLowerCase()] || { type: 'genre', id: 12, extra: '' };
-      const filterField = genreInfo.type === 'theme' ? 'themes' : 'genres';
+      let whereClause;
+      if (genreInfo.type === 'keyword') {
+        whereClause = `keywords.name = "${genreInfo.id}"`;
+      } else {
+        const filterField = genreInfo.type === 'theme' ? 'themes' : 'genres';
+        whereClause = `${filterField} = (${genreInfo.id})`;
+      }
+      const extra = genreInfo.extra || '';
 
       const offset = Math.floor(Math.random() * 5) * 10;
       const igdbRes = await fetch('https://api.igdb.com/v4/games', {
@@ -212,7 +219,7 @@ export default {
           'Content-Type': 'text/plain',
           'Accept': 'application/json',
         },
-        body: `fields name, summary, rating, rating_count, cover.url, websites.url, websites.category, genres.name, themes.name; where ${filterField} = (${genreInfo.id}) & rating >= 60 & rating_count >= 10 ${genreInfo.extra}; sort rating_count desc; limit 50; offset ${offset};`
+        body: `fields name, summary, rating, rating_count, cover.url, websites.url, websites.category, genres.name, themes.name; where ${whereClause} & rating >= 60 & rating_count >= 10 ${extra}; sort rating_count desc; limit 50; offset ${offset};`
       });
 
       const rawText = await igdbRes.text();
