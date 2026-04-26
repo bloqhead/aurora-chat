@@ -184,30 +184,27 @@ export default {
         await env.USERS.put('igdb_token', token, { expirationTtl: 4700000 });
       }
 
-      // IGDB genre name → ID map
-      const GENRE_IDS = {
-        'relaxing': 13,    // Simulator (closest to cozy)
-        'rpg': 12,
-        'indie': 32,
-        'puzzle': 9,
-        'horror': 19,
-        'strategy': 15,
-        'simulation': 13,
-        'platformer': 8,
-        'roguelike': 24,   // Hack and slash (closest)
-        'open world': 12,  // RPG (open world isn't a genre in IGDB)
-        'adventure': 31,
-        'shooter': 5,
-        'fighting': 4,
-        'sport': 14,
-        'racing': 10,
-        'arcade': 33,
+      // IGDB genre IDs (verified): https://api.igdb.com/v4/genres
+      // IGDB theme IDs: https://api.igdb.com/v4/themes
+      const GENRE_MAP = {
+        'relaxing':   { type: 'theme',  id: 21,   label: 'Sandbox' },  // use Sandbox theme + filter for peaceful games
+        'rpg':        { type: 'genre',  id: 12  },
+        'indie':      { type: 'genre',  id: 32  },
+        'puzzle':     { type: 'genre',  id: 9   },
+        'horror':     { type: 'theme',  id: 19  },
+        'strategy':   { type: 'genre',  id: 15  },
+        'simulation': { type: 'genre',  id: 13  },
+        'platformer': { type: 'genre',  id: 8   },
+        'roguelike':  { type: 'theme',  id: 23  },  // Survival theme — closest
+        'open world': { type: 'theme',  id: 33  },  // Open world theme
       };
 
-      const genreId = GENRE_IDS[genre.toLowerCase()] || 12;
+      const genreInfo = GENRE_MAP[genre.toLowerCase()] || { type: 'genre', id: 12 };
+      const filterField = genreInfo.type === 'theme' ? 'themes' : 'genres';
 
-      // Query IGDB — top rated games in genre with Steam website, released in last 8 years
+      // Query IGDB — top rated games with Steam links
       const eightYearsAgo = Math.floor(Date.now() / 1000) - (8 * 365 * 24 * 3600);
+      const offset = Math.floor(Math.random() * 5) * 10;
       const igdbRes = await fetch('https://api.igdb.com/v4/games', {
         method: 'POST',
         headers: {
@@ -216,17 +213,16 @@ export default {
           'Content-Type': 'text/plain',
         },
         body: `
-          fields name, summary, rating, rating_count, cover.url, websites.url, websites.category, genres.name, first_release_date;
-          where genres = (${genreId})
-            & rating > 70
-            & rating_count > 50
-            & first_release_date > ${eightYearsAgo}
+          fields name, summary, rating, rating_count, cover.url, websites.url, websites.category, genres.name, themes.name, first_release_date;
+          where ${filterField} = (${genreInfo.id})
+            & rating > 65
+            & rating_count > 20
             & websites.category = 13
             & version_parent = null
             & category = 0;
           sort rating desc;
           limit 50;
-          offset ${Math.floor(Math.random() * 5) * 10};
+          offset ${offset};
         `
       });
 
