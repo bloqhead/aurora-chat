@@ -160,13 +160,15 @@ export default {
         return json({ error: 'IGDB not configured' }, 503);
       }
 
-      // Cache results for 6 hours
+      const noCache = url.searchParams.get('nocache') === '1';
       const cacheKey = `igdb_genre:${genre.toLowerCase()}`;
-      const cached = await env.USERS.get(cacheKey);
-      if (cached) {
-        return new Response(cached, {
-          headers: { 'Content-Type': 'application/json', ...CORS }
-        });
+      if (!noCache) {
+        const cached = await env.USERS.get(cacheKey);
+        if (cached) {
+          return new Response(cached, {
+            headers: { 'Content-Type': 'application/json', ...CORS }
+          });
+        }
       }
 
       // Get/refresh OAuth token (cached in KV)
