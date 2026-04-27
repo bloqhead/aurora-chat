@@ -271,6 +271,82 @@ export default {
         headers: { 'Content-Type': 'application/json', ...CORS }
       });
     }
+    // ── Spotify OAuth token exchange ─────────────────────────────────────────
+    if (path === '/spotify/token' && request.method === 'POST') {
+      if (!env.SPOTIFY_CLIENT_ID || !env.SPOTIFY_CLIENT_SECRET) {
+        return json({ error: 'Spotify not configured' }, 503);
+      }
+      const body = await request.json().catch(() => ({}));
+      const { code, redirect_uri, refresh_token, grant_type } = body;
+
+      const params = new URLSearchParams();
+      if (grant_type === 'refresh_token') {
+        params.set('grant_type', 'refresh_token');
+        params.set('refresh_token', refresh_token);
+      } else {
+        params.set('grant_type', 'authorization_code');
+        params.set('code', code);
+        params.set('redirect_uri', redirect_uri);
+      }
+
+      const creds = btoa(`${env.SPOTIFY_CLIENT_ID}:${env.SPOTIFY_CLIENT_SECRET}`);
+      const res = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${creds}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: params,
+      });
+
+      const data = await res.json();
+      if (!res.ok) return json({ error: data.error_description || 'Token exchange failed' }, 400);
+      return json(data);
+    }
+
+    // ── Spotify now playing proxy ─────────────────────────────────────────────
+    if (path === '/spotify/now-playing' && request.method === 'GET') {
+      const token = request.headers.get('X-Spotify-Token');
+      if (!token) return json({ error: 'No token' }, 401);
+      const res = await fetch('https://api.spotify.com/v1/me/player/currently-playing', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (res.status === 204) return json({ playing: false });
+      if (!res.ok) return json({ error: 'Spotify error', status: res.status }, res.status);
+      const data = await res.json();
+      if (!data?.item) return json({ playing: false });
+      return json({
+        playing: data.is_playing,
+        progress: data.progress_ms,
+        duration: data.item.duration_ms,
+        name: data.item.name,
+        artist: data.item.artists?.map(a => a.name).join(', '),
+        album: data.item.album?.name,
+        art: data.item.album?.images?.[0]?.url || null,
+        url: data.item.external_urls?.spotify || null,
+      });
+    }
+
+    // ── Spotify playback control ──────────────────────────────────────────────
+    if (path === '/spotify/control' && request.method === 'POST') {
+      const token = request.headers.get('X-Spotify-Token');
+      if (!token) return json({ error: 'No token' }, 401);
+      const { action } = await request.json().catch(() => ({}));
+      const endpoints = {
+        play:     { method: 'PUT',  url: 'https://api.spotify.com/v1/me/player/play' },
+        pause:    { method: 'PUT',  url: 'https://api.spotify.com/v1/me/player/pause' },
+        next:     { method: 'POST', url: 'https://api.spotify.com/v1/me/player/next' },
+        previous: { method: 'POST', url: 'https://api.spotify.com/v1/me/player/previous' },
+      };
+      const ep = endpoints[action];
+      if (!ep) return json({ error: 'Invalid action' }, 400);
+      const res = await fetch(ep.url, {
+        method: ep.method,
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      return json({ ok: res.status < 300 });
+    }
+
     if (path === '/ws') {
       const token = url.searchParams.get('token');
       if (!token) return json({ error: 'Token required' }, 401);
