@@ -152,6 +152,20 @@ export default {
       return json({ token, username: user.username });
     }
 
+    // ── Token refresh ─────────────────────────────────────────────────────────
+    if (path === '/auth/refresh' && request.method === 'POST') {
+      const authHeader = request.headers.get('Authorization') || '';
+      const oldToken = authHeader.replace('Bearer ', '').trim();
+      if (!oldToken) return json({ error: 'No token provided' }, 401);
+      const payload = await verifyJWT(oldToken, env.JWT_SECRET);
+      if (!payload) return json({ error: 'Invalid or expired token' }, 401);
+      const newToken = await signJWT(
+        { sub: payload.sub, iat: Math.floor(Date.now()/1000), exp: Math.floor(Date.now()/1000) + 86400 },
+        env.JWT_SECRET
+      );
+      return json({ token: newToken, username: payload.sub });
+    }
+
     if (path === '/igdb' && request.method === 'GET') {
       const genre = url.searchParams.get('genre');
       if (!genre) return json({ error: 'genre required' }, 400);
