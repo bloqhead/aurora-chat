@@ -6,8 +6,24 @@ export class ChatRoom {
     this.state = state;
     this.env = env;
     this.sessions = new Map(); // username → WebSocket
-    this.history = [];         // last 100 messages
-    this.typing = new Set();   // usernames currently typing
+    this.history = [];         // cached in memory, persisted to storage
+    this.typing = new Set();
+    this.historyLoaded = false;
+  }
+
+  async loadHistory() {
+    if (this.historyLoaded) return;
+    try {
+      const stored = await this.state.storage.get('history');
+      if (stored) this.history = stored;
+    } catch {}
+    this.historyLoaded = true;
+  }
+
+  async saveHistory() {
+    try {
+      await this.state.storage.put('history', this.history);
+    } catch {}
   }
 
   async fetch(request) {
@@ -19,6 +35,9 @@ export class ChatRoom {
     const username = request.headers.get('X-Username');
     if (!username) return new Response('No username', { status: 400 });
 
+    // Load persisted history before doing anything
+    await this.loadHistory();
+
     const [client, server] = Object.values(new WebSocketPair());
     server.accept();
 
@@ -28,8 +47,9 @@ export class ChatRoom {
     }
     this.sessions.set(username, server);
 
-    // Send history + presence to new connection
-    this.send(server, { type: 'history', messages: this.history });
+    // Send last 50 messages as history to new connection
+    const recentHistory = this.history.slice(-50);
+    this.send(server, { type: 'history', messages: recentHistory });
     this.broadcast({ type: 'presence', online: [...this.sessions.keys()] });
     this.broadcast({ type: 'system', text: `${username} joined`, ts: Date.now() });
 
@@ -39,14 +59,17 @@ export class ChatRoom {
 
       if (data.type === 'message') {
         if (!data.text || typeof data.text !== 'string') return;
-        const text = data.text.trim().slice(0, 1000); // max 1000 chars
+        const text = data.text.trim().slice(0, 1000);
         if (!text) return;
 
         const msg = { username, text, ts: Date.now() };
         this.history.push(msg);
-        if (this.history.length > 100) this.history.shift();
+        // Keep last 200 messages in storage
+        if (this.history.length > 200) this.history = this.history.slice(-200);
 
-        // Clear typing when message sent
+        // Persist to storage (don't await — fire and forget for speed)
+        this.saveHistory();
+
         this.typing.delete(username);
         this.broadcastTyping();
         this.broadcast({ type: 'message', ...msg });
